@@ -1,4 +1,5 @@
 from crypy import sym_encryption, asym_encryption, encode_decode, crack_hash
+from crypy.utils import Menu
 
 menu = [
     "encoding and decoding",
@@ -15,29 +16,13 @@ def render_message():
 
 
 if __name__=="__main__":
-    while True:
-        render_message()
-        choice=input("enter your choice\n")
+    Menu([
+        ("encoding and decoding", encode_decode),
+        ("message hashing", hash),
+        ("cracking hash", crack_hash),
+        ("symmetric encryption and decryption", sym_encryption),
+        ("asymmectric encryption and decryption", asym_encryption),
+    ], once=False, include_back=False).run()
 
-        if choice=='1':
-            encode_decode()
-        
-        elif choice=='2':
-            hash()
-        
-        elif choice=='3':
-            crack_hash()
-        
-        elif choice=='4':
-            sym_encryption()
-        
-        elif choice=='5':
-            asym_encryption()
-        
-        elif choice==str(len(menu)):
-            break
-        
-        else:
-            print("invalid choice, retry...")
     
     
