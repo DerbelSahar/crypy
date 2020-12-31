@@ -6,7 +6,7 @@ from base64 import b64encode, b64decode
 import hashlib
 from Cryptodome.Cipher import AES
 from Cryptodome.Random import get_random_bytes
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from .utils import Menu
 import hashlib
@@ -15,6 +15,8 @@ from Crypto.Cipher import DES3
 from Crypto.Cipher import Blowfish
 from struct import pack
 import getpass
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives.asymmetric import rsa, dsa, ec, dh, padding
 
 def sym_encryption():
     Menu([
@@ -190,11 +192,98 @@ def blowfish_decryption(message, password):
 
 
 #########################################################################""
+def generate_asym_key(algorithm='rsa'):
+    pwd = getpass.getpass("enter a passphrase:")
+    if algorithm=='rsa':
+        private_key = rsa.generate_private_key(
+            public_exponent=65537,
+            key_size=2048,
+            backend=default_backend()
+        )
+        
+    elif algorithm=='dsa':
+        private_key = dsa.generate_private_key(
+            key_size=2048
+        )
+        
+    elif algorithm=='elliptic_curve':
+        elliptic_curve = ec.EllipticCurve()
+        private_key = ec.generate_private_key(
+            elliptic_curve
+        )
+        
+
+
+    public_key = private_key.public_key()
+    # private key
+    serial_private = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.BestAvailableEncryption(pwd.encode('utf-8'))
+    )
+    with open('private_noshare.pem', 'wb') as f: f.write(serial_private)
+
+    # public key
+    serial_pub = public_key.public_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PublicFormat.SubjectPublicKeyInfo
+    )
+    with open('public_shared.pem', 'wb') as f: f.write(serial_pub)
+    return public_key, private_key
+
+def read_private (filename = "private_noshare.pem"):
+    pwd = getpass.getpass("enter the passphrase")
+    with open(filename, "rb") as key_file:
+        private_key = serialization.load_pem_private_key(
+            key_file.read(),
+            password=pwd.encode('utf-8'),
+            backend=default_backend()
+        )
+    return private_key
+                  
+def read_public (filename = "public_shared.pem"):
+    with open(filename, "rb") as key_file:
+        public_key = serialization.load_pem_public_key(
+            key_file.read(),
+            backend=default_backend()
+        )
+    return public_key
+
 def asym_encrypt():
-    pass
+    message = input("enter the message to encrypt")
+
+    algorithm = Menu([
+        ("RSA Key", lambda: 'rsa'),
+        ("DSA Key", lambda: 'dsa'),
+        ("Elliptic Curve", lambda: 'elliptic_curve'),
+    ], choice_message="choose an asymmetric algorithm").run()
+
+    public_key, private_key = generate_asym_key(algorithm)
+    
+    encrypted = public_key.encrypt(
+        message.encode('utf-8'),
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+        )
+    )
+
+    encrypted = b64encode(encrypted).decode('utf-8')
+    print("encrypted:\n", encrypted)
 
 def asym_decrypt():
-    pass
+    encrypted = b64decode(input("enter the message to decrypt"))
+    private_key = read_private()
+    decrypted = private_key.decrypt(
+        encrypted,
+        padding.OAEP(
+            mgf=padding.MGF1(algorithm=hashes.SHA256()),
+            algorithm=hashes.SHA256(),
+            label=None
+    )).decode('utf-8')
+    print("decrypted:\n", decrypted)
+
 
 def manage_keys():
     pass
