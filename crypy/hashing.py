@@ -78,6 +78,7 @@ def crack_hash():
     print(message)
 
 def dictionary_attack(hashed):
+    #choose dictionary 
     algo = detect_hash(hashed)
     if (algo):
         with open("./names.txt") as dictionary:
@@ -87,7 +88,6 @@ def dictionary_attack(hashed):
                     hashed_word = hash_word(word, algo)
                     if hashed_word == hashed:
                         return word
-    return "failed to crack"
 
-def brute_force_attack(hashed):
-    pass
+    return "failed to crack hash"
+

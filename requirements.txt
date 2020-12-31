@@ -1,1 +1,4 @@
 cryptography
+pycrypto
+pycryptodome
+pycryptodomex

@@ -87,7 +87,7 @@ def fernet_decryption(message, password):
 
 
 
-###  AES 256 algorithme  ### woeks perfectly
+###  AES 256 algorithme  ### works perfectly
 class AES_algorithm:
     salt = None
     nonce = None
@@ -98,7 +98,7 @@ class AES_algorithm:
         salt = get_random_bytes(AES.block_size)
         private_key = hashlib.scrypt(password.encode(), salt=salt, n=2**14, r=8, p=1, dklen=32)
         cipher_config = AES.new(private_key, AES.MODE_GCM)
-        cipher_text,tag = cipher_config.encrypt_and_digest(bytes(message, 'utf-8'))
+        cipher_text,tag = cipher_config.encrypt_and_digest(message.encode('utf-8'))
         AES_algorithm.salt = b64encode(salt).decode('utf-8')
         AES_algorithm.nonce =  b64encode(cipher_config.nonce).decode('utf-8')
         AES_algorithm.tag = b64encode(tag).decode('utf-8')
@@ -123,7 +123,7 @@ def aes_decryption(message, password):
     decrypted = AES_algorithm.decrypt(message, password)
     return decrypted
 
-###  DES algorithme  ###  encryption TypeError: Object type <class 'str'> cannot be passed to C code
+###  DES algorithme  ###  Works perfectly
 class DES_algorithm:
     block_size = 16
     key = None
@@ -133,13 +133,13 @@ class DES_algorithm:
         DES_algorithm.key = hashlib.sha256(password.encode("utf-8")).digest()[:DES_algorithm.block_size]
         DES_algorithm.iv = Random.new().read(DES3.block_size)
         cipher = DES3.new(DES_algorithm.key, DES3.MODE_OFB, DES_algorithm.iv)
-        encrypted = cipher.encrypt(message)
-        return encrypted 
+        encrypted = cipher.encrypt(message.encode('utf-8'))
+        return b64encode(encrypted).decode('utf-8') 
     @staticmethod
     def decrypt(message, password):
         cipher = DES3.new(DES_algorithm.key, DES3.MODE_OFB, DES_algorithm.iv)
-        decrypted = cipher.decrypt(message)
-        return decrypted
+        decrypted = cipher.decrypt(b64decode(message))
+        return decrypted.decode('utf-8')
 
 def des_encryption(message, password):
     encrypted = DES_algorithm.encrypt(message, password) 
@@ -153,26 +153,30 @@ def des_decryption(message, password):
 
 ## Blowfish algorithme ## decryption Data must be padded to 8 byte boundary in CBC mode
 class Blowfish_algorithm:
-    key = None
-    iv= None
-    bs = Blowfish.block_size
-    pad = lambda s: s + (Blowfish_algorithm.bs - len(s) % Blowfish_algorithm.bs) * chr(Blowfish_algorithm.bs - len(s) % Blowfish_algorithm.bs) 
-    unpad = lambda s : s[0:-ord(s[-1])]
     @staticmethod
     def encrypt(message, password):
-        Blowfish_algorithm.key = hashlib.sha256(password.encode("utf-8")).digest()
-        Blowfish_algorithm.iv = os.urandom(Blowfish.block_size)
-        cipher = Blowfish.new(Blowfish_algorithm.key, Blowfish.MODE_CBC, Blowfish_algorithm.iv)
-        plen = Blowfish_algorithm.bs - divmod(len(message),Blowfish_algorithm.bs)[1]
+        bs = Blowfish.block_size
+        key = password.encode("utf-8")
+        cipher = Blowfish.new(key, Blowfish.MODE_CBC)
+        plen = bs - len(message) % bs
         padding = [plen]*plen
         padding = pack('b'*plen, *padding)
-        encrypted =Blowfish_algorithm.iv + cipher.encrypt(message.encode("utf-8") + padding)
-        return encrypted
+        encrypted =cipher.iv + cipher.encrypt(message.encode('utf-8') + padding)
+        return b64encode(encrypted).decode('utf-8')
+    
     @staticmethod
     def decrypt(message, password):
-        cipher = Blowfish.new(Blowfish_algorithm.key, Blowfish.MODE_CBC, Blowfish_algorithm.iv)
-        decrypted =cipher.decrypt(message[Blowfish_algorithm.bs:].encode('utf-8'))
-        return Blowfish_algorithm.unpad(decrypted)
+        message = b64decode(message)
+        bs = Blowfish.block_size
+        iv = message[:bs]
+        ciphertext = message[bs:]
+
+        key = password.encode("utf-8")
+        cipher = Blowfish.new(key, Blowfish.MODE_CBC, iv)
+        decrypted =cipher.decrypt(ciphertext)
+        last_byte = decrypted[-1]
+        decrypted = decrypted[:- (last_byte if type(last_byte) is int else ord(last_byte))]
+        return decrypted.decode('utf-8')
 
 def blowfish_encryption(message, password):
     encrypted = Blowfish_algorithm.encrypt(message,password)

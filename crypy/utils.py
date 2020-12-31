@@ -61,7 +61,8 @@ class Menu:
                     break
             if self.once:
                 break
-
+        
+        return result
 
     def quit(self):
         if self.quit_message:
