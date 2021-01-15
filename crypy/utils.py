@@ -60,9 +60,7 @@ class Menu:
                 if result == "GO_BACK":
                     break
             if self.once:
-                break
-        
-        return result
+                return result
 
     def quit(self):
         if self.quit_message:

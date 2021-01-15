@@ -101,5 +101,22 @@ def dictionary_attack(hashed):
     return "failed to crack hash"
 
 def brute_force_attack(hashed):
-    pass
+    algo = detect_hash(hashed)
+
+    charset = Menu([
+        ("Letters", lambda: string.ascii_letters),
+        ("Lowercase Letters", lambda: string.ascii_lowercase),
+        ("Uppercase Letters", lambda: string.ascii_uppercase),
+        ("Digits", lambda: string.digits),
+        ("Alphanumerical Characters", lambda: string.digits + string.ascii_letters),
+    ],choice_message="choose the charset to use").run()
+
+    for length in range(4, 11):
+        words = product(charset, repeat=length)
+        for word in words:
+            word = "".join(word)
+            hashed_word = hash_word(word, algo)
+            if hashed_word == hashed:
+                return word
+
 

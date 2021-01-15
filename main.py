@@ -1,4 +1,4 @@
-from crypy import sym_encryption, asym_encryption, encode_decode, crack_hash
+from crypy import sym_encryption, asym_encryption, encode_decode, crack_hash, hash_function
 from crypy.utils import Menu
 
 menu = [
@@ -18,7 +18,7 @@ def render_message():
 if __name__=="__main__":
     Menu([
         ("encoding and decoding", encode_decode),
-        ("message hashing", hash),
+        ("message hashing", hash_function),
         ("cracking hash", crack_hash),
         ("symmetric encryption and decryption", sym_encryption),
         ("asymmectric encryption and decryption", asym_encryption),
