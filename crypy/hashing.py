@@ -1,7 +1,11 @@
+import string
+from itertools import product
+
 from crypy.utils import Menu
 from hashlib import sha256, sha512, sha384, md5, sha1, sha224
+
 ### hashing ###
-def hash():
+def hash_function():
     message = input("enter the message to hash")
     hashing_algorithm = Menu([
         ("SHA1 ", lambda: sha1_hash),
@@ -69,7 +73,7 @@ def detect_hash(hashed):
 
 ### dictionary attack ###
 def crack_hash():
-    hached = input("enter the message to hash").strip()
+    hached = input("enter the message to crack").strip()
     cracking_technique = Menu([
         ("Dictionary attack", lambda: dictionary_attack),
         ("Brute force attack", lambda: brute_force_attack),
@@ -80,8 +84,13 @@ def crack_hash():
 def dictionary_attack(hashed):
     #choose dictionary 
     algo = detect_hash(hashed)
+    dictionary = Menu([
+        ("Plaint text Dictionary", lambda: "plaintext.txt"),
+        ("French Dictionary", lambda: "french.txt"),
+        ("English Dictionary", lambda: "english.txt"),
+    ],choice_message="choose a dictionary").run()
     if (algo):
-        with open("./names.txt") as dictionary:
+        with open("./crypy/dictionnaries/" + dictionary) as dictionary:
             for line in dictionary:
                 words = line.split()
                 for word in words:
@@ -90,4 +99,7 @@ def dictionary_attack(hashed):
                         return word
 
     return "failed to crack hash"
+
+def brute_force_attack(hashed):
+    pass
 
