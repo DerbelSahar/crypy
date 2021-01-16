@@ -200,17 +200,19 @@ def generate_asym_key(algorithm='rsa'):
             key_size=2048,
             backend=default_backend()
         )
-        
-    elif algorithm=='dsa':
-        private_key = dsa.generate_private_key(
-            key_size=2048
-        )
-        
-    elif algorithm=='elliptic_curve':
-        elliptic_curve = ec.EllipticCurve()
-        private_key = ec.generate_private_key(
-            elliptic_curve
-        )
+
+    # dsa cannot be used for encryption  
+    # elif algorithm=='dsa':
+    #     private_key = dsa.generate_private_key(
+    #         key_size=2048
+    #     )
+
+    # EC cannot be used for encryption    
+    # elif algorithm=='elliptic_curve':
+    #     elliptic_curve = ec.SECT163R2
+    #     private_key = ec.generate_private_key(
+    #         elliptic_curve
+    #     )
         
 
 
@@ -254,8 +256,8 @@ def asym_encrypt():
 
     algorithm = Menu([
         ("RSA Key", lambda: 'rsa'),
-        ("DSA Key", lambda: 'dsa'),
-        ("Elliptic Curve", lambda: 'elliptic_curve'),
+        #("DSA Key", lambda: 'dsa'),
+        #("Elliptic Curve", lambda: 'elliptic_curve'),
     ], choice_message="choose an asymmetric algorithm").run()
 
     public_key, private_key = generate_asym_key(algorithm)
