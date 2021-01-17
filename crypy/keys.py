@@ -5,6 +5,7 @@ from base64 import b64encode, b64decode
 from typing import Union, Optional , List
 import inspect
 import sys
+import shelve
 
 from cryptography.hazmat.primitives.asymmetric import rsa, dsa, ec, padding
 from cryptography.hazmat.primitives import hashes, serialization
@@ -31,7 +32,6 @@ class Key(ABC):
         pass
     
     @classmethod
-    @property
     def KEYS(cls):
         return [
             obj for _, obj in inspect.getmembers(sys.modules[__name__])
@@ -41,7 +41,7 @@ class Key(ABC):
     @classmethod
     def from_file(cls, filename: str) -> Optional[Key]:
         key = cls.read(filename)
-        key_class = next(filter(lambda _class: isinstance(key, _class.KEY_CLASS)))
+        key_class = next(filter(lambda _class: isinstance(key, _class.KEY_CLASS), cls.KEYS()))
         if key_class:
             return key_class(key=key)
         else:
@@ -100,6 +100,20 @@ class PublicKey(Key):
     
     def get_available_operations(self) -> List[str]:
         return self.AVAILABLE_OPERATIONS
+    
+    @classmethod
+    def PRIVATE_KEY_CLASS(cls):
+        return next(filter(
+            lambda _class: _class.PUBLIC_KEY_CLASS == cls,
+            PrivateKey.KEYS()
+        ))
+    
+    @classmethod
+    def ALGORITHM(cls):
+        private_key_class = cls.PRIVATE_KEY_CLASS()
+        if private_key_class:
+            return private_key_class.ALGORITHM
+        return None
 
 
 class RSAPublicKey(PublicKey, EncryptKey, VerifyKey):
@@ -210,7 +224,7 @@ class PrivateKey(Key):
             )
 
     def public_key(self) -> PublicKey:
-        return self.KEY_CLASS(public_key=self.private_key.public_key())
+        return self.PUBLIC_KEY_CLASS(key=self.private_key.public_key())
     
     def get_available_operations(self) -> List[str]:
         return self.AVAILABLE_OPERATIONS
@@ -304,29 +318,81 @@ class EllipticCurvePrivateKey(PrivateKey, SignKey):
         return ec.get_curve_for_oid(ObjectIdentifier(dotted_string))
 
 
+class KeyRing:
+    KEYRING_DIR = "crypy/keyring"
+    KEYRING_FILENAME = "keyring"
+    KEYRING = shelve.open(f"{KEYRING_DIR}/{KEYRING_FILENAME}", writeback=True)
+
+    def __init__(self, keyring_dir="crypy/keyring", keyring_filename="keyring"):
+        self.KEYRING_DIR = keyring_dir
+        self.KEYRING_FILENAME = keyring_filename
+    
+    def add_key_pair(self, key_pair: KeyPair):
+        self.KEYRING["keys"][key_pair.key_pair_name] = {
+            "type": "key_pair",
+            "algorithm": key_pair.ALGORITHM
+        }
+    
+    def add_public_key(self, key: PublicKey, key_name: str):
+        self.KEYRING["keys"][key_name] = {
+            "type": "public_key",
+            "algorithm": key.ALGORITHM()
+        }
+    
+    @property
+    def keys(self):
+        return self.KEYRING["keys"]
+    
+    def import_key_pair(self):
+        key_pair_name = input("Give a key pair name")
+        public_key_filename = input("Give the public key's file path")
+        private_key_filename = input("Give the private key's file path")
+        key_pair = KeyPair.from_files(private_key_filename, public_key_filename)
+        key_pair.key_pair_name = key_pair_name
+        key_pair.write()
+        self.add_key_pair(key_pair)
+    
+    def import_public_key(self):
+        key_name = input("Give a key name")
+        public_key_filename = input("Give the public key's file path")
+        public_key = PublicKey.from_file(public_key_filename)
+        if not public_key:
+            raise ValueError("Invalid or unsupported public key file")
+        
+        public_key.write(f"{self.KEYRING_DIR}/public_{key_name}")
+        self.add_public_key(public_key, key_name)
+
+
+KEYRING = KeyRing()
+
+
 class KeyPairMeta(ABCMeta):
     def __init__(cls, *args):
         cls.ALGORITHM = cls.PRIVATE_KEY_CLASS.ALGORITHM
+    
 
 class KeyPair(ABC, metaclass=KeyPairMeta):
     
     PRIVATE_KEY_CLASS = PrivateKey
-
+    KEYRING = KEYRING
+    
     def __init__(self,
+            key_pair_name: str = None,
             private_key: Optional[PrivateKey] = None,
             private_key_filename: Optional[str] = None,
             public_key: Optional[PublicKey] = None,
             public_key_filename: Optional[str] = None):
+        self.key_pair_name = key_pair_name
         if private_key:
             self.private_key = private_key
         elif private_key_filename:
             self.private_key = PrivateKey.from_file(private_key_filename)
         else:
-            self.private_key = self.PRIVATE_KEY_CLASS.generate()
+            self.private_key = self.PRIVATE_KEY_CLASS()
             self.public_key = self.private_key.public_key()
         
         assert isinstance(self.private_key, self.PRIVATE_KEY_CLASS), \
-            f"private key does not match class {self.PRIVATE_KEY_CLASS.__name__}"
+            f"private key ({self.private_key.__class__.__name__}) does not match class {self.PRIVATE_KEY_CLASS.__name__}"
         
         if public_key and (private_key or private_key_filename):
             self.public_key = public_key
@@ -338,11 +404,38 @@ class KeyPair(ABC, metaclass=KeyPairMeta):
         assert self.public_key.__class__ == self.private_key.PUBLIC_KEY_CLASS, \
             f"Public key and private key don't have matching classes: " \
             f"private: {self.private_key.__class__.__name__}, " \
-            f"public: {self.public_key.__class__.__name__}, " 
+            f"public: {self.public_key.__class__.__name__}, "
+    
+    def write(self):
+        self.public_key.write(f"{self.KEYRING.KEYRING_DIR}/public_{self.key_pair_name}")
+        self.private_key.write(f"{self.KEYRING.KEYRING_DIR}/private_{self.key_pair_name}")
+
+    @classmethod
+    def generate(cls):
+        key_pair_name = input("Give a key pair name")
+        key_pair = cls(key_pair_name=key_pair_name)
+        key_pair.write()
+        cls.KEYRING.add_key_pair(key_pair)
+    
+    @classmethod
+    def from_files(cls, private_key_filename: str, public_key_filename: str) -> Optional[KeyPair]:
+        private_key = PrivateKey.from_file(private_key_filename)
+        key_pair_class = next(filter(lambda _class: _class.PRIVATE_KEY_CLASS == private_key.__class__, cls.KEY_PAIRS()))
+        if key_pair_class:
+            return key_pair_class(private_key=private_key, public_key_filename=public_key_filename)
+        else:
+            return None
     
     def get_available_operations(self) -> List[str]:
         return self.private_key.get_available_operations() \
             + self.public_key.get_available_operations()
+    
+    @classmethod
+    def KEY_PAIRS(cls):
+        return [
+            obj for _, obj in inspect.getmembers(sys.modules[__name__])
+            if inspect.isclass(obj) and issubclass(obj, cls) and obj != cls
+        ]
 
 
 class EncryptionKeyPair(EncryptKey, DecryptKey):
@@ -376,5 +469,6 @@ class DSAKeyPair(KeyPair, SigningKeyPair):
 class EllipticCurveKeyPair(KeyPair, SigningKeyPair):
     PRIVATE_KEY_CLASS = EllipticCurvePrivateKey
 
-if __name__ == "__main__":
-    print(DSAKeyPair.ALGORITHM)
+if __name__=="__main__":
+    KEYRING.import_key_pair()
+    print(KEYRING.keys)
