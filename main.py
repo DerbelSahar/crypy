@@ -21,7 +21,7 @@ if __name__=="__main__":
         ("message hashing", hash_function),
         ("cracking hash", crack_hash),
         ("symmetric encryption and decryption", sym_encryption),
-        ("asymmectric encryption and decryption", asym_encryption),
+        ("asymmectric cryptography", asym_encryption),
     ], once=False, include_back=False).run()
 
     

@@ -17,10 +17,13 @@ from struct import pack
 import getpass
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives.asymmetric import rsa, dsa, ec, dh, padding
+from cryptography.x509 import ObjectIdentifier
+
+from .keys import KeyPair, KEYRING
 
 def sym_encryption():
     Menu([
-        ("symmetric encrypt of a message", sym_encrypt),
+        ("symmetric encryption of a message", sym_encrypt),
         ("symmetric decryption of an encrypted message", sym_decrypt)
     ]).run()
 
@@ -49,7 +52,6 @@ def sym_decrypt():
     decrypted = algorithm(message, password)
     print("decrypted:\n", decrypted)
     
-### Fernet Algorithm ### works perferctly
 class Fernet_algorithm:
     key = None
     salt = None
@@ -89,7 +91,6 @@ def fernet_decryption(message, password):
 
 
 
-###  AES 256 algorithme  ### works perfectly
 class AES_algorithm:
     salt = None
     nonce = None
@@ -125,7 +126,6 @@ def aes_decryption(message, password):
     decrypted = AES_algorithm.decrypt(message, password)
     return decrypted
 
-###  DES algorithme  ###  Works perfectly
 class DES_algorithm:
     block_size = 16
     key = None
@@ -189,111 +189,24 @@ def blowfish_decryption(message, password):
     return decrypted
 
 
+def asym_encrypt_sign():
+    operations = ["encrypt", "sign"]
+    key_pair = KeyPair.generate()
+    key_pair.provide_menu(filter_obj=operations).run()
 
-
-#########################################################################""
-def generate_asym_key(algorithm='rsa'):
-    pwd = getpass.getpass("enter a passphrase:")
-    if algorithm=='rsa':
-        private_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048,
-            backend=default_backend()
-        )
-
-    # dsa cannot be used for encryption  
-    # elif algorithm=='dsa':
-    #     private_key = dsa.generate_private_key(
-    #         key_size=2048
-    #     )
-
-    # EC cannot be used for encryption    
-    # elif algorithm=='elliptic_curve':
-    #     elliptic_curve = ec.SECT163R2
-    #     private_key = ec.generate_private_key(
-    #         elliptic_curve
-    #     )
-        
-
-
-    public_key = private_key.public_key()
-    # private key
-    serial_private = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.BestAvailableEncryption(pwd.encode('utf-8'))
-    )
-    with open('private_noshare.pem', 'wb') as f: f.write(serial_private)
-
-    # public key
-    serial_pub = public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo
-    )
-    with open('public_shared.pem', 'wb') as f: f.write(serial_pub)
-    return public_key, private_key
-
-def read_private (filename = "private_noshare.pem"):
-    pwd = getpass.getpass("enter the passphrase")
-    with open(filename, "rb") as key_file:
-        private_key = serialization.load_pem_private_key(
-            key_file.read(),
-            password=pwd.encode('utf-8'),
-            backend=default_backend()
-        )
-    return private_key
-                  
-def read_public (filename = "public_shared.pem"):
-    with open(filename, "rb") as key_file:
-        public_key = serialization.load_pem_public_key(
-            key_file.read(),
-            backend=default_backend()
-        )
-    return public_key
-
-def asym_encrypt():
-    message = input("enter the message to encrypt")
-
-    algorithm = Menu([
-        ("RSA Key", lambda: 'rsa'),
-        #("DSA Key", lambda: 'dsa'),
-        #("Elliptic Curve", lambda: 'elliptic_curve'),
-    ], choice_message="choose an asymmetric algorithm").run()
-
-    public_key, private_key = generate_asym_key(algorithm)
-    
-    encrypted = public_key.encrypt(
-        message.encode('utf-8'),
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None
-        )
-    )
-
-    encrypted = b64encode(encrypted).decode('utf-8')
-    print("encrypted:\n", encrypted)
-
-def asym_decrypt():
-    encrypted = b64decode(input("enter the message to decrypt"))
-    private_key = read_private()
-    decrypted = private_key.decrypt(
-        encrypted,
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None
-    )).decode('utf-8')
-    print("decrypted:\n", decrypted)
+def asym_decrypt_verify():
+    operations = ["decrypt", "verify"]
+    key = KEYRING.keys_menu().run()
+    key.provide_menu(filter_obj=operations).run()
 
 
 def manage_keys():
-    pass
+    KEYRING.provide_menu().run()
 
 def asym_encryption():
     Menu([
-        ("encrypt message", asym_encrypt),
-        ("decrypt message", asym_decrypt),
+        ("generate key pair and encrypt/sign a message", asym_encrypt_sign),
+        ("decrypt/verify a message using existing key pair", asym_decrypt_verify),
         ("key management", manage_keys)
     ]).run()
     

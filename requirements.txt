@@ -2,4 +2,3 @@ cryptography
 pycrypto
 pycryptodome
 pycryptodomex
-eciespy
