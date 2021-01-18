@@ -2,10 +2,12 @@ from __future__ import annotations
 import abc 
 from abc import ABC, abstractmethod, ABCMeta
 from base64 import b64encode, b64decode
-from typing import Union, Optional , List
+from typing import Union, Optional , List, Tuple
+from collections.abc import Callable
 import inspect
 import sys
 import shelve
+from functools import wraps
 
 from cryptography.hazmat.primitives.asymmetric import rsa, dsa, ec, padding
 from cryptography.hazmat.primitives import hashes, serialization
@@ -14,10 +16,56 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.x509 import ObjectIdentifier
 import getpass
 
-from .utils import Menu
+from .utils import Menu, MenuProvider
   
+class OperationsProvider(MenuProvider):
+    AVAILABLE_OPERATIONS = []
+    
+    def get_available_operations(self) -> List[str]:
+        return self.AVAILABLE_OPERATIONS
+    
+    @staticmethod
+    def key_operation_decorator(inp: Optional[List[Tuple[str, Optional[Callable]]]] = None,
+                                out: Tuple[str, Optional[Callable]] = ('', None)):
+        
+        if not inp:
+            inp = []
+        identity = lambda x: x
+        def _key_operation_decorator(operation):
+            @wraps(operation)
+            def inner(self):
+                assert operation.__code__.co_argcount == len(inp) + 1, \
+                    "decorator inp length is not equal to the operation args number"
+                args = [(func or identity)(input(msg)) for msg, func in inp]
+                result = operation(self, *args)
+                msg, func = out
+                func = func or identity
+                result = func(result)
+                if result:
+                    print(msg + result)
+            return inner
+        return _key_operation_decorator
+    
+    def provide_menu(self, filter_obj: Union[Callable, List[str]] = None):
+        if filter_obj is None:
+            filter_func = (lambda x: True)
+        elif isinstance(filter_obj, list):
+            filter_func = lambda x: x in filter_obj
+        else:
+            filter_func = filter_obj
+        
+        return Menu([
+            (
+                operation.replace('_', ' ').title(),
+                getattr(self, operation)
+            ) 
+            for operation in self.get_available_operations()
+            if filter_func(operation)
+        ], choice_message="Select operation")
 
-class Key(ABC):
+class Key(OperationsProvider):
+    AVAILABLE_OPERATIONS = []
+
     @abstractmethod
     def write(self, filename: str):
         pass
@@ -25,10 +73,6 @@ class Key(ABC):
     @staticmethod
     @abstractmethod
     def read(filename: str):
-        pass
-
-    @abstractmethod
-    def get_available_operations(self) -> List[str]:
         pass
     
     @classmethod
@@ -46,6 +90,27 @@ class Key(ABC):
             return key_class(key=key)
         else:
             return None
+
+ENCRYPT_DECORATOR = OperationsProvider.key_operation_decorator(
+    inp=[("Give a message to encrypt", lambda msg: msg.encode("utf-8"))],
+    out=("Encrypted message:", lambda msg: b64encode(msg).decode('utf-8'))
+)
+VERIFY_DECORATOR = OperationsProvider.key_operation_decorator(
+    inp=[
+        ("Give a signature", lambda sig: b64decode(sig)),
+        ("Give a message", lambda msg: msg.encode("utf-8"))
+    ],
+    out=("", lambda res: "Verified" if res else "Not Verified")
+)
+DECRYPT_DECORATOR = OperationsProvider.key_operation_decorator(
+    inp=[("Give a message to decrypt", lambda msg: b64decode(msg))],
+    out=("Decrypted message:", lambda msg: msg.decode("utf-8"))
+)
+SIGN_DECORATOR = OperationsProvider.key_operation_decorator(
+    inp=[("Give a message to sign", lambda msg: msg.encode("utf-8"))],
+    out=("Signed message:", lambda msg: b64encode(msg).decode('utf-8'))
+)
+    
 
 class DecryptKey(ABC):
     @abstractmethod
@@ -88,7 +153,7 @@ class PublicKey(Key):
             encoding=serialization.Encoding.PEM,
             format=serialization.PublicFormat.SubjectPublicKeyInfo
         )
-        with open(f'{filename}.pem', 'wb') as f: f.write(serial_pub)
+        with open(filename, 'wb') as f: f.write(serial_pub)
 
     @staticmethod
     def read(filename: str) -> Union[rsa.RSAPublicKey, dsa.DSAPublicKey, ec.EllipticCurvePublicKey, None]:
@@ -97,9 +162,6 @@ class PublicKey(Key):
                 key_file.read(),
                 backend=default_backend()
             )
-    
-    def get_available_operations(self) -> List[str]:
-        return self.AVAILABLE_OPERATIONS
     
     @classmethod
     def PRIVATE_KEY_CLASS(cls):
@@ -120,6 +182,7 @@ class RSAPublicKey(PublicKey, EncryptKey, VerifyKey):
     KEY_CLASS = rsa.RSAPublicKey
     AVAILABLE_OPERATIONS = ["encrypt", "verify"]
 
+    @ENCRYPT_DECORATOR
     def encrypt(self, message: bytes) -> bytes:
         return self.public_key.encrypt(
             message,
@@ -130,6 +193,7 @@ class RSAPublicKey(PublicKey, EncryptKey, VerifyKey):
             )
         )
     
+    @VERIFY_DECORATOR
     def verify(self, signature: bytes, message: bytes) -> bool:
         try:
             self.public_key.verify(
@@ -152,6 +216,7 @@ class DSAPublicKey(PublicKey, VerifyKey):
     KEY_CLASS = dsa.DSAPublicKey
     AVAILABLE_OPERATIONS = ["verify"]
 
+    @VERIFY_DECORATOR
     def verify(self, signature: bytes, message: bytes) -> bool:
         try:
             self.public_key.verify(
@@ -169,6 +234,7 @@ class EllipticCurvePublicKey(PublicKey, VerifyKey):
     KEY_CLASS = ec.EllipticCurvePublicKey
     AVAILABLE_OPERATIONS = ["verify"]
 
+    @VERIFY_DECORATOR
     def verify(self, signature: bytes, message: bytes) -> bool:
         try:
             self.public_key.verify(
@@ -211,7 +277,7 @@ class PrivateKey(Key):
             format=serialization.PrivateFormat.PKCS8,
             encryption_algorithm=serialization.BestAvailableEncryption(pwd.encode('utf-8'))
         )
-        with open(f'{filename}.pem', 'wb') as f: f.write(serial_private)
+        with open(filename, 'wb') as f: f.write(serial_private)
 
     @staticmethod
     def read(filename: str) -> Union[rsa.RSAPrivateKey, dsa.DSAPrivateKey, ec.EllipticCurvePrivateKey, None]:
@@ -225,9 +291,6 @@ class PrivateKey(Key):
 
     def public_key(self) -> PublicKey:
         return self.PUBLIC_KEY_CLASS(key=self.private_key.public_key())
-    
-    def get_available_operations(self) -> List[str]:
-        return self.AVAILABLE_OPERATIONS
 
 
 class RSAPrivateKey(PrivateKey, DecryptKey, SignKey):
@@ -244,6 +307,7 @@ class RSAPrivateKey(PrivateKey, DecryptKey, SignKey):
             backend=default_backend()
         )
     
+    @DECRYPT_DECORATOR
     def decrypt(self, encrypted_message: bytes) -> bytes:
         return self.private_key.decrypt(
             encrypted_message,
@@ -254,6 +318,7 @@ class RSAPrivateKey(PrivateKey, DecryptKey, SignKey):
             )
         )
     
+    @SIGN_DECORATOR
     def sign(self, message: bytes) -> bytes:
         return self.private_key.sign(
             message,
@@ -277,6 +342,7 @@ class DSAPrivateKey(PrivateKey, SignKey):
             key_size=2048
         )
     
+    @SIGN_DECORATOR
     def sign(self, message: bytes) -> bytes:
         return self.private_key.sign(
             message,
@@ -289,6 +355,7 @@ class EllipticCurvePrivateKey(PrivateKey, SignKey):
     AVAILABLE_OPERATIONS = ["sign"]
     ALGORITHM = "Elliptic Curve"
     
+    @SIGN_DECORATOR
     def sign(self, message: bytes) -> bytes:
         return self.private_key.sign(
             message,
@@ -318,7 +385,8 @@ class EllipticCurvePrivateKey(PrivateKey, SignKey):
         return ec.get_curve_for_oid(ObjectIdentifier(dotted_string))
 
 
-class KeyRing:
+class KeyRing(OperationsProvider):
+    AVAILABLE_OPERATIONS = ["import_key_pair", "import_public_key", "select_key", "new_key_pair"]
     KEYRING_DIR = "crypy/keyring"
     KEYRING_FILENAME = "keyring"
     KEYRING = shelve.open(f"{KEYRING_DIR}/{KEYRING_FILENAME}", writeback=True)
@@ -339,11 +407,48 @@ class KeyRing:
             "algorithm": key.ALGORITHM()
         }
     
+    def get_key_pair(self, key_pair_name: str) -> Optional[KeyPair]:
+        if key_pair_name in self.KEYRING["keys"] and \
+                self.KEYRING["keys"][key_pair_name]["type"] == "key_pair":
+            return KeyPair.from_files(
+                f"{self.KEYRING_DIR}/private_{key_pair_name}.pem",
+                f"{self.KEYRING_DIR}/public_{key_pair_name}.pem"
+            )
+        else:
+            return None
+    
+    def get_public_key(self, key_name: str) -> Optional[PublicKey]:
+        if key_name in self.KEYRING["keys"] and \
+                self.KEYRING["keys"][key_name]["type"] == "public_key":
+            return PublicKey.from_file(
+                f"{self.KEYRING_DIR}/public_{key_name}.pem"
+            )
+        else:
+            return None
+    
+    def keys_menu(self) -> Menu:
+        return Menu(map(
+            lambda key: (
+                f"{key[0]}, algorithm: {key[1]['algorithm']}, type: {key[1]['type']}", 
+                lambda: self.get_public_key(key[0]) if key[1]["type"]=="public_key" \
+                    else self.get_key_pair(key[0])
+            ),
+            self.keys.items()
+        ), choice_message="Select a key from the keyring")
+    
     @property
     def keys(self):
         return self.KEYRING["keys"]
     
-    def import_key_pair(self):
+    @OperationsProvider.key_operation_decorator(
+        inp=[
+            ("Give a key pair name", None),
+            ("Give the public key's file path", None),
+            ("Give the private key's file path", None),
+        ],
+        out=("", None)
+    )
+    def import_key_pair(self, key_pair_name, public_key_filename, private_key_filenames):
         key_pair_name = input("Give a key pair name")
         public_key_filename = input("Give the public key's file path")
         private_key_filename = input("Give the private key's file path")
@@ -352,15 +457,27 @@ class KeyRing:
         key_pair.write()
         self.add_key_pair(key_pair)
     
-    def import_public_key(self):
-        key_name = input("Give a key name")
-        public_key_filename = input("Give the public key's file path")
+    @OperationsProvider.key_operation_decorator(
+        inp=[
+            ("Give a key name", None),
+            ("Give the public key's file path", None),
+        ],
+        out=("", None)
+    )
+    def import_public_key(self, key_name, public_key_filename):
         public_key = PublicKey.from_file(public_key_filename)
         if not public_key:
             raise ValueError("Invalid or unsupported public key file")
         
-        public_key.write(f"{self.KEYRING_DIR}/public_{key_name}")
+        public_key.write(f"{self.KEYRING_DIR}/public_{key_name}.pem")
         self.add_public_key(public_key, key_name)
+    
+    def select_key(self):
+        key = self.keys_menu().run()
+        key.provide_menu().run()
+    
+    def new_key_pair(self):
+        return KeyPair.generate()
 
 
 KEYRING = KeyRing()
@@ -371,7 +488,7 @@ class KeyPairMeta(ABCMeta):
         cls.ALGORITHM = cls.PRIVATE_KEY_CLASS.ALGORITHM
     
 
-class KeyPair(ABC, metaclass=KeyPairMeta):
+class KeyPair(OperationsProvider, metaclass=KeyPairMeta):
     
     PRIVATE_KEY_CLASS = PrivateKey
     KEYRING = KEYRING
@@ -407,15 +524,23 @@ class KeyPair(ABC, metaclass=KeyPairMeta):
             f"public: {self.public_key.__class__.__name__}, "
     
     def write(self):
-        self.public_key.write(f"{self.KEYRING.KEYRING_DIR}/public_{self.key_pair_name}")
-        self.private_key.write(f"{self.KEYRING.KEYRING_DIR}/private_{self.key_pair_name}")
+        self.public_key.write(f"{self.KEYRING.KEYRING_DIR}/public_{self.key_pair_name}.pem")
+        self.private_key.write(f"{self.KEYRING.KEYRING_DIR}/private_{self.key_pair_name}.pem")
 
     @classmethod
-    def generate(cls):
-        key_pair_name = input("Give a key pair name")
-        key_pair = cls(key_pair_name=key_pair_name)
-        key_pair.write()
-        cls.KEYRING.add_key_pair(key_pair)
+    def generate(cls) -> KeyPair:
+        if cls in KeyPair.KEY_PAIRS():
+            key_pair_name = input("Give a key pair name")
+            key_pair = cls(key_pair_name=key_pair_name)
+            key_pair.write()
+            cls.KEYRING.add_key_pair(key_pair)
+            return key_pair
+        else:
+            key_pair_class = Menu(map(
+                lambda _class: (_class.ALGORITHM, lambda: _class),
+                cls.KEY_PAIRS()
+            ), choice_message="Choose an algorithm").run()
+            return key_pair_class.generate()
     
     @classmethod
     def from_files(cls, private_key_filename: str, public_key_filename: str) -> Optional[KeyPair]:
@@ -443,22 +568,22 @@ class EncryptionKeyPair(EncryptKey, DecryptKey):
         self.private_key = private_key
         self.public_key = public_key
     
-    def decrypt(self, encrypted_message: bytes) -> bytes:
-        return self.private_key.decrypt(encrypted_message)
+    def decrypt(self):
+        return self.private_key.decrypt()
     
-    def encrypt(self, message: bytes) -> bytes:
-        return self.private_key.encrypt(message)
+    def encrypt(self):
+        return self.public_key.encrypt()
 
 class SigningKeyPair(SignKey, VerifyKey):
     def __init__(self, private_key: PrivateKey, public_key: PublicKey):
         self.private_key = private_key
         self.public_key = public_key
     
-    def sign(self, message: bytes) -> bytes:
-        return self.public_key.sign(message)
+    def sign(self):
+        return self.private_key.sign()
     
-    def verify(self, signature: bytes, message: bytes) -> bool:
-        return self.public_key.verify(signature, message)
+    def verify(self):
+        return self.public_key.verify()
 
 class RSAKeyPair(KeyPair, EncryptionKeyPair, SigningKeyPair):
     PRIVATE_KEY_CLASS = RSAPrivateKey
@@ -470,5 +595,4 @@ class EllipticCurveKeyPair(KeyPair, SigningKeyPair):
     PRIVATE_KEY_CLASS = EllipticCurvePrivateKey
 
 if __name__=="__main__":
-    KEYRING.import_key_pair()
-    print(KEYRING.keys)
+    KeyPair.generate()
