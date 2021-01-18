@@ -5,7 +5,9 @@ from operator import itemgetter
 from abc import ABC, abstractmethod, ABCMeta
 
 
-class Menu:
+class Menu(ABC):
+    choices = []
+    
     '''Display a menu and respond to choices when run.'''
     def __init__(self, choices: Optional[Iterable] = None, include_quit: bool = True,
                  once: bool = True, choice_message: str = "Enter an option: ",
@@ -35,6 +37,22 @@ class Menu:
     def descriptions(self):
         return list(map(itemgetter(0), self.choices))
 
+    @abstractmethod
+    def display_menu(self):
+        pass
+
+    @abstractmethod
+    def run(self):
+        pass
+
+    @abstractmethod
+    def quit(self):
+        pass
+
+class StreamlitMenu(Menu):
+    pass
+
+class CLIMenu(Menu):
     def display_menu(self):
         message_template = "{index}- {description}"
 

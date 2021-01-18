@@ -2,3 +2,4 @@ cryptography
 pycrypto
 pycryptodome
 pycryptodomex
+streamlit

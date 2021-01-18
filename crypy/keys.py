@@ -445,8 +445,7 @@ class KeyRing(OperationsProvider):
             ("Give a key pair name", None),
             ("Give the public key's file path", None),
             ("Give the private key's file path", None),
-        ],
-        out=("", None)
+        ]
     )
     def import_key_pair(self, key_pair_name, public_key_filename, private_key_filenames):
         key_pair_name = input("Give a key pair name")
@@ -461,8 +460,7 @@ class KeyRing(OperationsProvider):
         inp=[
             ("Give a key name", None),
             ("Give the public key's file path", None),
-        ],
-        out=("", None)
+        ]
     )
     def import_public_key(self, key_name, public_key_filename):
         public_key = PublicKey.from_file(public_key_filename)
