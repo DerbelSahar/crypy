@@ -225,6 +225,7 @@ def manage_keys():
 
 @inject
 def asym_encryption(service: IOService = Provide[Container.service]):
+    service.print("Asymmetric Encryption", mode='header')
     service.Menu([
         ("generate key pair and encrypt/sign a message", asym_encrypt_sign),
         ("decrypt/verify a message using existing key pair", asym_decrypt_verify),

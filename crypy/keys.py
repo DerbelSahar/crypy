@@ -167,7 +167,6 @@ class PublicKey(Key):
 
     @staticmethod
     def read(filename: str) -> Union[rsa.RSAPublicKey, dsa.DSAPublicKey, ec.EllipticCurvePublicKey, None]:
-        print(filename)
         with open(filename, "rb") as key_file:
             return serialization.load_pem_public_key(
                 key_file.read(),
@@ -409,6 +408,8 @@ class KeyRing(OperationsProvider):
     def __init__(self, keyring_dir="crypy/keyring", keyring_filename="keyring"):
         self.KEYRING_DIR = keyring_dir
         self.KEYRING_FILENAME = keyring_filename
+        if not self.KEYRING.get("keys"):
+            self.KEYRING["keys"] = {}
     
     def add_key_pair(self, key_pair: KeyPair):
         self.KEYRING["keys"][key_pair.key_pair_name] = {

@@ -133,3 +133,6 @@ dmypy.json
 
 # salt database
 crypy/salts.db
+
+# dictionnaries
+crypy/dictionnaries/imported*.txt
