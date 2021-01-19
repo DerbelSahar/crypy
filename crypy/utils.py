@@ -17,7 +17,7 @@ class Menu(ABC):
     def __init__(self, choices: Optional[Iterable] = None, include_quit: bool = True,
                  once: bool = True, choice_message: str = "Choose an option: ",
                  quit_message: Optional[str] = "Quitting", include_back: bool = False,
-                 mode: str = ''
+                 mode: str = '', empty_message: str = "No options"
     ):
         if not choices:
             choices = []
@@ -26,6 +26,7 @@ class Menu(ABC):
         self.choice_message = choice_message
         self.include_back = include_back
         self.include_quit = include_quit
+        self.empty_message = empty_message
         
         self.quit_message = quit_message
         self.mode = mode
@@ -68,17 +69,22 @@ class StreamlitMenu(Menu):
         else:
             return st
 
-    def display_menu(self) -> int:
+    def display_menu(self) -> Optional[int]:
         option = self.placeholder.selectbox(
             self.choice_message, list(enumerate(self.descriptions, start=1)),
             format_func=itemgetter(1)
-        )[0]
-        return option
+        )
+        if option:
+            return option[0]
+        return None
     
     def run(self):
         '''Display the menu and respond to choices.'''
         while True:
             choice = self.display_menu()
+            if not choice:
+                st.warning(self.empty_message)
+                st.stop()
             action = self.actions[choice-1]
             if action:
                 result = action()
@@ -99,6 +105,11 @@ class StreamlitMenu(Menu):
 
 class CLIMenu(Menu):
     def display_menu(self):
+        if not self.actions or (len(self.actions) == 1 and self.actions[0]==self.quit):
+            print(f"{Color.WARNING}{self.empty_message}{Color.ENDC}")
+            self.quit()
+            return
+        
         message_template = "{index}- {description}"
 
         print("\n".join(
@@ -107,6 +118,7 @@ class CLIMenu(Menu):
                 for index, description in enumerate(self.descriptions, start=1)
             ]
         ))
+        return True
 
     def run(self):
         '''Display the menu and respond to choices.'''

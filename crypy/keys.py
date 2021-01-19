@@ -485,8 +485,11 @@ class KeyRing(OperationsProvider):
         key = self.keys_menu().run()
         key.provide_menu().run()
     
-    def new_key_pair(self):
-        return KeyPair.generate()
+    @inject
+    def new_key_pair(self, service: IOService = Provide[Container.service])-> KeyPair:
+        key_pair = KeyPair.generate()
+        service.print("Key pair created", mode='success')
+        return key_pair
 
 
 KEYRING = KeyRing()
