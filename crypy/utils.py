@@ -117,7 +117,7 @@ class CLIMenu(Menu):
                 message_template.format(index=index, description=description)
                 for index, description in enumerate(self.descriptions, start=1)
             ]
-        ))
+        ), "\n")
         return True
 
     def run(self):
