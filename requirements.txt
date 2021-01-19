@@ -3,3 +3,4 @@ pycrypto
 pycryptodome
 pycryptodomex
 streamlit
+dependency-injector
