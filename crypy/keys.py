@@ -408,7 +408,7 @@ class KeyRing(OperationsProvider):
     def __init__(self, keyring_dir="crypy/keyring", keyring_filename="keyring"):
         self.KEYRING_DIR = keyring_dir
         self.KEYRING_FILENAME = keyring_filename
-        if not self.KEYRING.get("keys"):
+        if not "keys" in self.KEYRING:
             self.KEYRING["keys"] = {}
     
     def add_key_pair(self, key_pair: KeyPair):
@@ -454,7 +454,7 @@ class KeyRing(OperationsProvider):
     
     @property
     def keys(self):
-        return self.KEYRING["keys"]
+        return self.KEYRING.get("keys", {})
     
     @inject
     def import_key_pair(self,
