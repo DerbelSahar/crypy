@@ -121,10 +121,8 @@ class StreamlitService(IOService):
         return result
     
     def submit(self, message: str = "Done", key: str = None):
-        #placeholder = st.empty()
-        checkbox = st.checkbox(message, key=key)
-        if not checkbox:
+        button = st.button(message, key=key)
+        if not button:
             st.stop()
-        #placeholder.empty()
         
 

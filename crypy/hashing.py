@@ -84,6 +84,7 @@ def crack_hash(service: IOService = Provide[Container.service]):
         ("Dictionary attack", lambda: dictionary_attack),
         ("Brute force attack", lambda: brute_force_attack),
     ],choice_message="choose the technique to use").run()
+    
     message = cracking_technique(hached)
     service.print(message, mode='code')
 
@@ -105,6 +106,9 @@ def dictionary_attack(hashed, service: IOService = Provide[Container.service]):
         ("English Dictionnary", lambda: "english.txt"),
         ("Import and use Dictionnary", import_dict)
     ],choice_message="choose a dictionary").run()
+
+    service.submit(message='Submit')
+
     if (algo):
         with open("./crypy/dictionnaries/" + dictionary) as dictionary:
             for line in dictionary:
@@ -127,6 +131,8 @@ def brute_force_attack(hashed, service: IOService = Provide[Container.service]):
         ("Digits", lambda: string.digits),
         ("Alphanumerical Characters", lambda: string.digits + string.ascii_letters),
     ],choice_message="choose the charset to use").run()
+
+    service.submit(message='Submit')
 
     for length in range(4, 11):
         words = product(charset, repeat=length)
