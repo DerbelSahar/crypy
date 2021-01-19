@@ -100,6 +100,10 @@ def import_dict(service: IOService = Provide[Container.service]):
 @inject
 def dictionary_attack(hashed, service: IOService = Provide[Container.service]):
     algo = detect_hash(hashed)
+
+    if not algo:
+        return "Failed to crack hash"
+
     dictionary = service.Menu([
         ("Plaint text Dictionnary", lambda: "plaintext.txt"),
         ("French Dictionnary", lambda: "french.txt"),
@@ -108,18 +112,16 @@ def dictionary_attack(hashed, service: IOService = Provide[Container.service]):
     ],choice_message="choose a dictionary").run()
 
     service.submit(message='Submit')
+    with open("./crypy/dictionnaries/" + dictionary) as dictionary:
+        for line in dictionary:
+            words = line.split()
+            for word in words:
+                hashed_word = hash_word(word, algo)
+                if hashed_word == hashed:
+                    return word
+    return "Failed to crack hash"
 
-    if (algo):
-        with open("./crypy/dictionnaries/" + dictionary) as dictionary:
-            for line in dictionary:
-                words = line.split()
-                for word in words:
-                    hashed_word = hash_word(word, algo)
-                    if hashed_word == hashed:
-                        return word
-
-    return "failed to crack hash"
-
+    
 @inject
 def brute_force_attack(hashed, service: IOService = Provide[Container.service]):
     algo = detect_hash(hashed)
