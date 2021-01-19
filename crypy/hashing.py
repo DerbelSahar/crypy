@@ -1,13 +1,19 @@
 import string
 from itertools import product
+import time
+from shutil import copyfile
 
 from crypy.utils import Menu
 from hashlib import sha256, sha512, sha384, md5, sha1, sha224
+from .containers import Container
+from .services import IOService
+from dependency_injector.wiring import inject, Provide
 
-### hashing ###
-def hash_function():
-    message = input("enter the message to hash")
-    hashing_algorithm = Menu([
+@inject
+def hash_function(service: IOService = Provide[Container.service]):
+    service.print("Hashing", mode='header')
+    message = service.input("enter the message to hash")
+    hashing_algorithm = service.Menu([
         ("SHA1 ", lambda: sha1_hash),
         ("SHA224", lambda: sha224_hash),
         ("SHA256", lambda: sha256_hash),
@@ -16,7 +22,8 @@ def hash_function():
         ("MD5", lambda: md5_hash),
     ],choice_message="choose a hashing algorithm").run()
     hashed = hashing_algorithm(message)
-    print(hashed)
+    service.print("hashed:")
+    service.print(hashed, mode='code')
 
 def sha1_hash(message):
     return sha1(message.encode()).hexdigest()
@@ -36,9 +43,6 @@ def sha512_hash(message):
 def md5_hash(message):
     return md5(message.encode()).hexdigest()
 
-
-### cracking hash ###
-
 def hash_word(word, hash_algo):
     if hash_algo.upper() == 'SHA256':
         return sha256(word.encode()).hexdigest()
@@ -53,8 +57,8 @@ def hash_word(word, hash_algo):
     elif hash_algo.upper() == 'SHA224':
         return sha224(word.encode()).hexdigest()
 
-
-def detect_hash(hashed):
+@inject
+def detect_hash(hashed, service: IOService = Provide[Container.service]):
     if len(hashed) == 128:
         return 'SHA512'
     elif len(hashed) == 96:
@@ -68,26 +72,38 @@ def detect_hash(hashed):
     elif len(hashed) == 56:
         return 'SHA224'
     else:
-        print('Could not auto detect hash type\n')
+        service.print('Could not auto detect hash type\n', mode='warning')
         return None
 
-### dictionary attack ###
-def crack_hash():
-    hached = input("enter the message to crack").strip()
-    cracking_technique = Menu([
+
+@inject
+def crack_hash(service: IOService = Provide[Container.service]):
+    service.print("Hash Cracking", mode='header')
+    hached = service.input("enter the message to crack").strip()
+    cracking_technique = service.Menu([
         ("Dictionary attack", lambda: dictionary_attack),
         ("Brute force attack", lambda: brute_force_attack),
     ],choice_message="choose the technique to use").run()
     message = cracking_technique(hached)
-    print(message)
+    service.print(message, mode='code')
 
-def dictionary_attack(hashed):
-    #choose dictionary 
+@inject
+def import_dict(service: IOService = Provide[Container.service]):
+    source = service.read_file("Provide the dictionnary filepath")
+    imported_filename = f'imported{time.strftime("%Y%m%d-%H%M%S")}.txt'
+    destination = f"./crypy/dictionnaries/{imported_filename}"
+    copyfile(source, destination)
+    service.print("Imported", mode='success')
+    return imported_filename
+
+@inject
+def dictionary_attack(hashed, service: IOService = Provide[Container.service]):
     algo = detect_hash(hashed)
-    dictionary = Menu([
-        ("Plaint text Dictionary", lambda: "plaintext.txt"),
-        ("French Dictionary", lambda: "french.txt"),
-        ("English Dictionary", lambda: "english.txt"),
+    dictionary = service.Menu([
+        ("Plaint text Dictionnary", lambda: "plaintext.txt"),
+        ("French Dictionnary", lambda: "french.txt"),
+        ("English Dictionnary", lambda: "english.txt"),
+        ("Import and use Dictionnary", import_dict)
     ],choice_message="choose a dictionary").run()
     if (algo):
         with open("./crypy/dictionnaries/" + dictionary) as dictionary:
@@ -100,10 +116,11 @@ def dictionary_attack(hashed):
 
     return "failed to crack hash"
 
-def brute_force_attack(hashed):
+@inject
+def brute_force_attack(hashed, service: IOService = Provide[Container.service]):
     algo = detect_hash(hashed)
 
-    charset = Menu([
+    charset = service.Menu([
         ("Letters", lambda: string.ascii_letters),
         ("Lowercase Letters", lambda: string.ascii_lowercase),
         ("Uppercase Letters", lambda: string.ascii_uppercase),

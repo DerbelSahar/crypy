@@ -17,7 +17,11 @@ from cryptography.x509 import ObjectIdentifier
 import getpass
 
 from .utils import Menu, MenuProvider
-  
+from .containers import Container
+from .services import IOService
+from dependency_injector.wiring import inject, Provide
+
+
 class OperationsProvider(MenuProvider):
     AVAILABLE_OPERATIONS = []
     
@@ -33,20 +37,24 @@ class OperationsProvider(MenuProvider):
         identity = lambda x: x
         def _key_operation_decorator(operation):
             @wraps(operation)
-            def inner(self):
+            @inject
+            def inner(self, service: IOService = Provide[Container.service]):
                 assert operation.__code__.co_argcount == len(inp) + 1, \
                     "decorator inp length is not equal to the operation args number"
-                args = [(func or identity)(input(msg)) for msg, func in inp]
+                args = [(func or identity)(service.input(msg)) for msg, func in inp]
                 result = operation(self, *args)
                 msg, func = out
                 func = func or identity
                 result = func(result)
                 if result:
-                    print(msg + result)
+                    service.print(msg)
+                    service.print(result, mode='code')
             return inner
         return _key_operation_decorator
     
-    def provide_menu(self, filter_obj: Union[Callable, List[str]] = None):
+    @inject
+    def provide_menu(self, filter_obj: Union[Callable, List[str]] = None,
+                    service: IOService = Provide[Container.service]):
         if filter_obj is None:
             filter_func = (lambda x: True)
         elif isinstance(filter_obj, list):
@@ -54,7 +62,7 @@ class OperationsProvider(MenuProvider):
         else:
             filter_func = filter_obj
         
-        return Menu([
+        return service.Menu([
             (
                 operation.replace('_', ' ').title(),
                 getattr(self, operation)
@@ -136,9 +144,11 @@ class PublicKey(Key):
     KEY_CLASS = object
     AVAILABLE_OPERATIONS = ["encrypt", "verify"]
 
+    @inject
     def __init__(self,
             key: Union[rsa.RSAPublicKey, dsa.DSAPublicKey, ec.EllipticCurvePublicKey, None] = None,
-            filename: Optional[str] = None):
+            filename: Optional[str] = None,
+            service: IOService = Provide[Container.service]):
         if key:
             self.public_key = key
         elif filename:
@@ -157,6 +167,7 @@ class PublicKey(Key):
 
     @staticmethod
     def read(filename: str) -> Union[rsa.RSAPublicKey, dsa.DSAPublicKey, ec.EllipticCurvePublicKey, None]:
+        print(filename)
         with open(filename, "rb") as key_file:
             return serialization.load_pem_public_key(
                 key_file.read(),
@@ -269,9 +280,10 @@ class PrivateKey(Key):
     @abstractmethod
     def generate(cls) -> Union[rsa.RSAPrivateKey, dsa.DSAPrivateKey, ec.EllipticCurvePrivateKey]:
         pass
-    
-    def write(self, filename: str):
-        pwd = getpass.getpass("enter a passphrase:")
+
+    @inject
+    def write(self, filename: str, service: IOService = Provide[Container.service]):
+        pwd = service.getpass("enter a passphrase:")
         serial_private = self.private_key.private_bytes(
             encoding=serialization.Encoding.PEM,
             format=serialization.PrivateFormat.PKCS8,
@@ -280,8 +292,9 @@ class PrivateKey(Key):
         with open(filename, 'wb') as f: f.write(serial_private)
 
     @staticmethod
-    def read(filename: str) -> Union[rsa.RSAPrivateKey, dsa.DSAPrivateKey, ec.EllipticCurvePrivateKey, None]:
-        pwd = getpass.getpass("enter the passphrase")
+    @inject
+    def read(filename: str, service: IOService = Provide[Container.service]) -> Union[rsa.RSAPrivateKey, dsa.DSAPrivateKey, ec.EllipticCurvePrivateKey, None]:
+        pwd = service.getpass("enter the passphrase")
         with open(filename, "rb") as key_file:
             return serialization.load_pem_private_key(
                 key_file.read(),
@@ -363,8 +376,9 @@ class EllipticCurvePrivateKey(PrivateKey, SignKey):
         )
     
     @classmethod
-    def generate(cls) -> Union[rsa.RSAPrivateKey, dsa.DSAPrivateKey, ec.EllipticCurvePrivateKey]:
-        elliptic_curve = Menu([
+    @inject
+    def generate(cls, service: IOService = Provide[Container.service]) -> Union[rsa.RSAPrivateKey, dsa.DSAPrivateKey, ec.EllipticCurvePrivateKey]:
+        elliptic_curve = service.Menu([
             ("SECT571R1", lambda: ec.SECT571R1),
             ("SECP192R1", lambda: ec.SECP192R1),
             ("SECP256R1", lambda: ec.SECP256R1),
@@ -380,8 +394,9 @@ class EllipticCurvePrivateKey(PrivateKey, SignKey):
         )
     
     @staticmethod
-    def lookup_ec_by_oid():
-        dotted_string = input("Give the Elliptic Curve's dotted string")
+    @inject
+    def lookup_ec_by_oid(service: IOService = Provide[Container.service]):
+        dotted_string = service.input("Give the Elliptic Curve's dotted string")
         return ec.get_curve_for_oid(ObjectIdentifier(dotted_string))
 
 
@@ -426,8 +441,8 @@ class KeyRing(OperationsProvider):
         else:
             return None
     
-    def keys_menu(self) -> Menu:
-        return Menu(map(
+    def keys_menu(self, service: IOService = Provide[Container.service]) -> service.Menu:
+        return service.Menu(map(
             lambda key: (
                 f"{key[0]}, algorithm: {key[1]['algorithm']}, type: {key[1]['type']}", 
                 lambda: self.get_public_key(key[0]) if key[1]["type"]=="public_key" \
@@ -440,35 +455,30 @@ class KeyRing(OperationsProvider):
     def keys(self):
         return self.KEYRING["keys"]
     
-    @OperationsProvider.key_operation_decorator(
-        inp=[
-            ("Give a key pair name", None),
-            ("Give the public key's file path", None),
-            ("Give the private key's file path", None),
-        ]
-    )
-    def import_key_pair(self, key_pair_name, public_key_filename, private_key_filenames):
-        key_pair_name = input("Give a key pair name")
-        public_key_filename = input("Give the public key's file path")
-        private_key_filename = input("Give the private key's file path")
+    @inject
+    def import_key_pair(self,
+                        service: IOService = Provide[Container.service]):
+        key_pair_name = service.input("Give a key pair name")
+        public_key_filename = service.read_file("Give the public key's file path", key='1')
+        private_key_filename = service.read_file("Give the private key's file path", key='2')
         key_pair = KeyPair.from_files(private_key_filename, public_key_filename)
         key_pair.key_pair_name = key_pair_name
         key_pair.write()
         self.add_key_pair(key_pair)
+        service.print("Imported", mode='success')
     
-    @OperationsProvider.key_operation_decorator(
-        inp=[
-            ("Give a key name", None),
-            ("Give the public key's file path", None),
-        ]
-    )
-    def import_public_key(self, key_name, public_key_filename):
+
+    @inject
+    def import_public_key(self, service: IOService = Provide[Container.service]):
+        key_name = service.input("Give a key name")
+        public_key_filename = service.read_file("Give the public key's file path")
         public_key = PublicKey.from_file(public_key_filename)
         if not public_key:
             raise ValueError("Invalid or unsupported public key file")
         
         public_key.write(f"{self.KEYRING_DIR}/public_{key_name}.pem")
         self.add_public_key(public_key, key_name)
+        service.print("Imported", mode='success')
     
     def select_key(self):
         key = self.keys_menu().run()
@@ -526,15 +536,16 @@ class KeyPair(OperationsProvider, metaclass=KeyPairMeta):
         self.private_key.write(f"{self.KEYRING.KEYRING_DIR}/private_{self.key_pair_name}.pem")
 
     @classmethod
-    def generate(cls) -> KeyPair:
+    @inject
+    def generate(cls, service: IOService = Provide[Container.service]) -> KeyPair:
         if cls in KeyPair.KEY_PAIRS():
-            key_pair_name = input("Give a key pair name")
+            key_pair_name = service.input("Give a key pair name")
             key_pair = cls(key_pair_name=key_pair_name)
             key_pair.write()
             cls.KEYRING.add_key_pair(key_pair)
             return key_pair
         else:
-            key_pair_class = Menu(map(
+            key_pair_class = service.Menu(map(
                 lambda _class: (_class.ALGORITHM, lambda: _class),
                 cls.KEY_PAIRS()
             ), choice_message="Choose an algorithm").run()

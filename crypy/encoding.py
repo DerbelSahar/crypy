@@ -1,17 +1,25 @@
-from .utils import Menu
 import base64
-def encode_decode():
-    Menu([
+from dependency_injector.wiring import inject, Provide
+
+from .containers import Container
+from .services import IOService
+
+@inject
+def encode_decode(service: IOService = Provide[Container.service]):
+    service.print("Encoding", mode='header')
+    service.Menu([
         ("encoding a message", encode),
         ("decoding a code", decode),
     ]).run()
 
-def encode():
-    message = input("enter the message to encode")
+@inject
+def encode(service: IOService = Provide[Container.service]):
+    message = service.input("enter the message to encode")
     code = base64.b64encode(message.encode('ascii'))
-    print(code.decode('ascii'))
+    service.print(code.decode('ascii'), mode='code')
 
-def decode():
-    code = input("enter the code to decode")
+@inject
+def decode(service: IOService = Provide[Container.service]):
+    code = service.input("enter the code to decode")
     message = base64.b64decode(code.encode('ascii'))
-    print(message.decode('ascii'))
+    service.print(message.decode('ascii'), mode='code')
